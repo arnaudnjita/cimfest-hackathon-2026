@@ -33,8 +33,11 @@ This application consists of two synchronized, zero-server client interfaces tha
 
 ## Deployment & Hosting
 
-Hosted live on Vercel with clean URL routing.
+### GitHub Pages (Primary)
+- **Live Stage View**: [https://arnaudnjita.github.io/cimfest-hackathon-2026/](https://arnaudnjita.github.io/cimfest-hackathon-2026/)
+- **Organizer Admin Cockpit**: [https://arnaudnjita.github.io/cimfest-hackathon-2026/cimfest_admin.html](https://arnaudnjita.github.io/cimfest-hackathon-2026/cimfest_admin.html)
 
+### Vercel Deployment
 - **Stage View**: [https://cimfest-hackathon-2026.vercel.app](https://cimfest-hackathon-2026.vercel.app)
 - **Admin Cockpit**: [https://cimfest-hackathon-2026.vercel.app/admin](https://cimfest-hackathon-2026.vercel.app/admin)
 
