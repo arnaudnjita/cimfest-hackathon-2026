@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/stage",
+      "destination": "/cimfest_stage.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/cimfest_admin.html"
+    },
+    {
+      "source": "/timer",
+      "destination": "/cimfest_countdown_timer.html"
+    }
+  ]
+}
