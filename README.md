@@ -28,6 +28,12 @@ This application consists of two synchronized, zero-server client interfaces tha
 - **Session Phase Manager**: Update stage badge (e.g. *Main Hacking Sprint*, *Mentor Checkpoint*, *Final Polish*, *Pitch Sessions*).
 - **Audio & FX Remote**: Trigger remote screen flash, chimes, victory fanfare, master volume, and mute.
 - **Live Stage Digit Typography Switcher**: Switch fonts on stage between Bebas Neue, Cabinet Grotesk, Anton, Impact, and JetBrains Mono.
+- **📱 Phone Remote Control & Cloud Sync [NEW]**:
+  - **Instant Multi-Device Sync**: Organizers can control the big stage projector from their phones, tablets, or laptops anywhere in the venue.
+  - **1-Scan Phone Pairing**: Click "📱 Remote Control" on the stage screen to show a scannable QR code that pairs your phone camera instantly.
+  - **Zero-Config Cloud Fallback**: Automatically connects using high-speed cloud WebSockets right out of the box with room code `cimfest2026`.
+  - **Firebase Realtime Database Support**: Plug in your private Firebase credentials into `firebase_config.js` or in the in-app modal.
+  - **Offline-First Resilience**: Automatically falls back to native `BroadcastChannel` and `localStorage` if Wi-Fi goes down.
 
 ---
 

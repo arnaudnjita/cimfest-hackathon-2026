@@ -12,6 +12,13 @@
   
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
 
+  <!-- Cloud Sync & Firebase Realtime SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <script src="firebase_config.js"></script>
+  <script src="cloud_sync.js"></script>
+
   <style>
     :root, [data-font-theme="bebas"] {
       --digit-font: 'Bebas Neue', 'Cabinet Grotesk', 'Impact', sans-serif;
@@ -86,8 +93,12 @@
     </div>
 
     <!-- Live Stage Sync Status & Window Trigger -->
-    <div class="flex items-center gap-3">
-      <div id="syncBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold">
+    <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+      <button onclick="openPhoneRemoteModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#d4ff00]/15 hover:bg-[#d4ff00]/25 border border-[#d4ff00]/30 text-[#d4ff00] text-xs font-bold transition-all shadow-[0_0_12px_rgba(212,255,0,0.2)]" title="Pair Phone Remote via QR Code">
+        <span>📱 Remote / Cloud</span>
+      </button>
+
+      <div id="syncBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-semibold cursor-pointer hover:bg-white/10 transition-colors" onclick="openPhoneRemoteModal()" title="Click to view Cloud & Pairing Settings">
         <span class="w-2.5 h-2.5 rounded-full bg-[#3de8bf] animate-ping" id="syncPing"></span>
         <span class="w-2.5 h-2.5 rounded-full bg-[#3de8bf] absolute" id="syncDot"></span>
         <span id="syncText" class="ml-2 text-slate-300">Stage Screen Linked</span>
@@ -621,13 +632,21 @@
 
     // Broadcast command to stage
     function broadcast(action, payload = {}) {
-      const message = { action, payload, timestamp: Date.now() };
+      const message = { 
+        action, 
+        payload, 
+        timestamp: Date.now(),
+        id: 'cmd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
+      };
       if (channel) {
         try { channel.postMessage(message); } catch(e) {}
       }
       try {
         localStorage.setItem('cimfest_admin_last_cmd', JSON.stringify(message));
       } catch (e) {}
+      if (window.cloudSync) {
+        window.cloudSync.sendCommand(message);
+      }
     }
 
     // Commands
@@ -1065,10 +1084,164 @@
       }
     }, 2000);
 
+    if (window.cloudSync) {
+      window.cloudSync.init({
+        isStage: false,
+        onState: (data) => {
+          handleStageHeartbeat(data);
+        },
+        onStatus: (st) => {
+          updateCloudSyncStatusUI(st);
+        }
+      });
+    }
+
+    function updateCloudSyncStatusUI(st) {
+      const ping = document.getElementById('syncPing');
+      const dot = document.getElementById('syncDot');
+      const txt = document.getElementById('syncText');
+      if (!txt) return;
+
+      const providerLabel = st.provider === 'firebase' ? 'Firebase' : (st.provider === 'mqtt' ? 'Cloud' : 'Local');
+      if (st.status === 'connected') {
+        txt.innerText = `Stage Screen Linked (${providerLabel})`;
+        if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-[#3de8bf] absolute';
+        if (ping) ping.classList.remove('hidden');
+      } else if (st.status === 'connecting') {
+        txt.innerText = `Connecting (${providerLabel})...`;
+        if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 absolute';
+        if (ping) ping.classList.add('hidden');
+      }
+    }
+
+    function openPhoneRemoteModal() {
+      const modal = document.getElementById('phonePairingModal');
+      if (!modal) return;
+      const url = window.cloudSync.getAdminPairingUrl();
+      const qrImg = document.getElementById('pairingQrImg');
+      const inputUrl = document.getElementById('modalPairingUrl');
+      const inputRoom = document.getElementById('modalRoomInput');
+      const fbInput = document.getElementById('modalFirebaseInput');
+      
+      if (qrImg) qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(url)}`;
+      if (inputUrl) inputUrl.value = url;
+      if (inputRoom) inputRoom.value = window.cloudSync.getRoomId();
+      if (fbInput) {
+        const cfg = window.cloudSync.getFirebaseConfig();
+        if (cfg) fbInput.value = JSON.stringify(cfg, null, 2);
+      }
+      
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closePhoneRemoteModal() {
+      const modal = document.getElementById('phonePairingModal');
+      if (!modal) return;
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveRoomCodeFromModal() {
+      const inputRoom = document.getElementById('modalRoomInput');
+      if (inputRoom && inputRoom.value) {
+        window.cloudSync.setRoomId(inputRoom.value);
+      }
+    }
+
+    function copyPairingUrl() {
+      const inputUrl = document.getElementById('modalPairingUrl');
+      if (inputUrl) {
+        navigator.clipboard.writeText(inputUrl.value).then(() => {
+          const btn = document.getElementById('copyPairingBtn');
+          if (btn) {
+            btn.innerText = 'Copied!';
+            btn.classList.add('bg-emerald-500/40');
+            setTimeout(() => {
+              btn.innerText = 'Copy';
+              btn.classList.remove('bg-emerald-500/40');
+            }, 2000);
+          }
+        });
+      }
+    }
+
+    function saveFirebaseConfigFromModal() {
+      const fbInput = document.getElementById('modalFirebaseInput');
+      if (!fbInput || !fbInput.value.trim()) return;
+      try {
+        const parsed = JSON.parse(fbInput.value.trim());
+        window.cloudSync.saveFirebaseConfig(parsed);
+      } catch(e) {
+        alert('Invalid JSON! Please paste a valid Firebase configuration JSON object.');
+      }
+    }
+
+    function clearFirebaseConfig() {
+      if (confirm('Clear saved Firebase configuration and revert to default cloud sync?')) {
+        window.cloudSync.saveFirebaseConfig(null);
+      }
+    }
+
     setAdminTimeFormat(currentAdminFormat, false);
     sendFontTheme(currentAdminFont);
     broadcast('ADMIN_HELLO', { time: Date.now() });
     updateClockDisplay();
   </script>
+
+  <!-- PHONE PAIRING & CLOUD SYNC MODAL -->
+  <div id="phonePairingModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-[#121622] border border-white/10 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl relative">
+      <button onclick="closePhoneRemoteModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl font-bold">&times;</button>
+      
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3de8bf] to-[#6ee268] text-black font-extrabold flex items-center justify-center text-xl">📱</div>
+        <div>
+          <h3 class="font-extrabold text-base text-white">Phone Remote Control</h3>
+          <p class="text-xs text-slate-400">Control this stage timer from any phone, tablet, or PC</p>
+        </div>
+      </div>
+
+      <div class="bg-black/50 border border-white/10 rounded-xl p-4 flex flex-col items-center justify-center mb-4 text-center">
+        <img id="pairingQrImg" src="" alt="Pairing QR Code" class="w-48 h-48 rounded-lg bg-white p-2 shadow-lg mb-3">
+        <p class="text-xs text-slate-300 font-semibold">Scan with your phone camera to control the stage remotely!</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Room Code (Multi-Device Sync)</label>
+          <div class="flex gap-2">
+            <input type="text" id="modalRoomInput" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-[#3de8bf] focus:outline-none focus:border-[#3de8bf]" value="cimfest2026">
+            <button onclick="saveRoomCodeFromModal()" class="px-3 py-1.5 bg-[#3de8bf] text-black text-xs font-black rounded-lg hover:opacity-90">Change</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Direct Pairing Link</label>
+          <div class="flex gap-2">
+            <input type="text" id="modalPairingUrl" readonly class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] font-mono text-slate-300 select-all" value="">
+            <button onclick="copyPairingUrl()" id="copyPairingBtn" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-bold rounded-lg transition-all">Copy</button>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-white/10">
+          <details class="text-xs group">
+            <summary class="cursor-pointer font-bold text-slate-400 hover:text-white flex items-center justify-between">
+              <span>🔥 Firebase Realtime Database (Optional)</span>
+              <span class="text-[10px] text-slate-500 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+            <div class="mt-2 space-y-2 text-xs">
+              <p class="text-[11px] text-slate-400">Paste your Firebase Config JSON below to use your private Firebase Database. If blank, high-speed cloud WebSockets are used automatically.</p>
+              <textarea id="modalFirebaseInput" rows="4" placeholder='{"databaseURL": "https://...", "apiKey": "..."}' class="w-full bg-black/60 border border-white/10 rounded-lg p-2 font-mono text-[10px] text-slate-200 focus:outline-none focus:border-[#3de8bf]"></textarea>
+              <div class="flex justify-end gap-2">
+                <button onclick="clearFirebaseConfig()" class="px-2.5 py-1 bg-rose-500/20 text-rose-300 rounded text-xs hover:bg-rose-500/30">Clear</button>
+                <button onclick="saveFirebaseConfigFromModal()" class="px-3 py-1 bg-[#3de8bf] text-black font-bold rounded text-xs hover:opacity-90">Save Config</button>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

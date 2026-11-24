@@ -12,6 +12,13 @@
   
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
 
+  <!-- Cloud Sync & Firebase Realtime SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <script src="firebase_config.js"></script>
+  <script src="cloud_sync.js"></script>
+
   <style>
     :root, [data-font-theme="bebas"] {
       --digit-font: 'Bebas Neue', 'Cabinet Grotesk', 'Impact', sans-serif;
@@ -516,6 +523,10 @@
 
     <!-- Right Controls: Admin Link, Sound, Fullscreen & Customize -->
     <div class="flex items-center gap-2 sm:gap-3">
+      <button onclick="openPhoneRemoteModal()" class="px-2.5 py-1.5 rounded-xl bg-[#d4ff00]/15 hover:bg-[#d4ff00]/25 border border-[#d4ff00]/30 text-[#d4ff00] text-xs font-bold flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(212,255,0,0.2)]" title="Pair Phone Remote via QR Code">
+        <span>📱 Remote Control</span>
+      </button>
+
       <a href="cimfest_admin.html" target="_blank" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#3de8bf]/20 to-[#6ee268]/20 hover:from-[#3de8bf]/30 hover:to-[#6ee268]/30 border border-[#3de8bf]/40 text-[#3de8bf] text-xs font-bold flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(61,232,191,0.2)]">
         <span>🎛 Admin Dashboard</span>
         <span class="text-[10px]">↗</span>
@@ -2029,8 +2040,15 @@
       }
     });
 
+    let lastHandledCommandTimestamp = 0;
     function handleAdminBroadcast(data) {
       if (!data) return;
+      if (data.timestamp && data.timestamp <= lastHandledCommandTimestamp) {
+        return; // Already handled by local or cloud channel
+      }
+      if (data.timestamp) {
+        lastHandledCommandTimestamp = data.timestamp;
+      }
 
       markAdminConnected();
 
@@ -2236,6 +2254,65 @@
       if (busChannel) {
         try { busChannel.postMessage(msg); } catch(e) {}
       }
+      if (window.cloudSync) {
+        window.cloudSync.sendState(msg);
+      }
+    }
+
+    if (window.cloudSync) {
+      window.cloudSync.init({
+        isStage: true,
+        onCommand: (data) => {
+          handleAdminBroadcast(data);
+        }
+      });
+    }
+
+    function openPhoneRemoteModal() {
+      const modal = document.getElementById('phonePairingModal');
+      if (!modal) return;
+      const url = window.cloudSync.getAdminPairingUrl();
+      const qrImg = document.getElementById('pairingQrImg');
+      const inputUrl = document.getElementById('modalPairingUrl');
+      const inputRoom = document.getElementById('modalRoomInput');
+      
+      if (qrImg) qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(url)}`;
+      if (inputUrl) inputUrl.value = url;
+      if (inputRoom) inputRoom.value = window.cloudSync.getRoomId();
+      
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closePhoneRemoteModal() {
+      const modal = document.getElementById('phonePairingModal');
+      if (!modal) return;
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveRoomCodeFromModal() {
+      const inputRoom = document.getElementById('modalRoomInput');
+      if (inputRoom && inputRoom.value) {
+        window.cloudSync.setRoomId(inputRoom.value);
+      }
+    }
+
+    function copyPairingUrl() {
+      const inputUrl = document.getElementById('modalPairingUrl');
+      if (inputUrl) {
+        navigator.clipboard.writeText(inputUrl.value).then(() => {
+          const btn = document.getElementById('copyPairingBtn');
+          if (btn) {
+            btn.innerText = 'Copied!';
+            btn.classList.add('bg-emerald-500/40');
+            setTimeout(() => {
+              btn.innerText = 'Copy';
+              btn.classList.remove('bg-emerald-500/40');
+            }, 2000);
+          }
+        });
+      }
     }
 
     setInterval(sendStageHeartbeat, 1000);
@@ -2250,5 +2327,43 @@
     startTimer();
     sendStageHeartbeat();
   </script>
+
+  <!-- PHONE PAIRING & CLOUD SYNC MODAL -->
+  <div id="phonePairingModal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-[#121622] border border-white/10 rounded-2xl max-w-md w-full p-6 text-white shadow-2xl relative">
+      <button onclick="closePhoneRemoteModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl font-bold">&times;</button>
+      
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3de8bf] to-[#6ee268] text-black font-extrabold flex items-center justify-center text-xl">📱</div>
+        <div>
+          <h3 class="font-extrabold text-base text-white">Phone Remote Control</h3>
+          <p class="text-xs text-slate-400">Control this stage timer from your phone or laptop</p>
+        </div>
+      </div>
+
+      <div class="bg-black/50 border border-white/10 rounded-xl p-4 flex flex-col items-center justify-center mb-4 text-center">
+        <img id="pairingQrImg" src="" alt="Pairing QR Code" class="w-48 h-48 rounded-lg bg-white p-2 shadow-lg mb-3">
+        <p class="text-xs text-slate-300 font-semibold">Scan with your phone camera to launch the remote Admin Cockpit!</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Room Code</label>
+          <div class="flex gap-2">
+            <input type="text" id="modalRoomInput" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-[#3de8bf] focus:outline-none focus:border-[#3de8bf]" value="cimfest2026">
+            <button onclick="saveRoomCodeFromModal()" class="px-3 py-1.5 bg-[#3de8bf] text-black text-xs font-black rounded-lg hover:opacity-90">Change</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Direct Pairing Link</label>
+          <div class="flex gap-2">
+            <input type="text" id="modalPairingUrl" readonly class="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] font-mono text-slate-300 select-all" value="">
+            <button onclick="copyPairingUrl()" id="copyPairingBtn" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-bold rounded-lg transition-all">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
